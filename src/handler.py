@@ -4,7 +4,7 @@ import numpy as np
 from pandas import DataFrame, read_csv, concat
 from pandas.errors import EmptyDataError
 from misc.converter import date_to_str, str_to_date
-from misc.settings import *
+from misc.settings import STATS
 
 class Handler:
     def __init__(self):
@@ -72,7 +72,10 @@ class Handler:
         else:
             full_path = self.data_path / self.folders[category] / f"{category}.csv"
 
-        return full_path
+        if full_path.is_file():
+            return full_path
+        else:
+            raise FileNotFoundError
 
     def _load_csv(self, category:str, date: str|int|tuple[int,int]|tuple[int, int, int]|None = None) -> DataFrame:
         path = self._build_path(category, date)
@@ -100,19 +103,20 @@ class Handler:
 
     def add_day(self, data: DataFrame, date: str|tuple[int, int, int]):
         if data.empty:
-            raise EmptyDataError
+            raise ValueError
         if isinstance(date, str):
             day, month, year = str_to_date(date)
         else:
             day, month, year = date
 
+        mp = data.iloc[0].dict()
         month_df = self._load_csv("month", date)
-        month_df = concat([month_df, data], ignore_index=True)
+        month_df[date] = mp
         self._save_csv(month_df, "month", date)
 
     def add_month(self, data: DataFrame, date: str|tuple[int, int]):
         if data.empty:
-            raise EmptyDataError
+            raise ValueError
         if isinstance(date, str):
             month, year = str_to_date(date)
         else:
@@ -125,10 +129,9 @@ class Handler:
 
     def add_anomaly(self, data: DataFrame, date: str | tuple[int, int, int]):
         if data.empty:
-            raise EmptyDataError
-        mp = data.iloc[0].to_dict()
+            raise ValueError
         anomalies_df = self._load_csv(category="anomalies")
         if isinstance(date, tuple):
             date = date_to_str(*date)
-        anomalies_df[date] = mp
+        anomalies_df = concat([anomalies_df, date], ignore_index=True)
         self._save_csv(anomalies_df, category="anomalies")
