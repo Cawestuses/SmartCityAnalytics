@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from misc.handler import Handler
+from src.handler import Handler
 
 
 class TestHandler(unittest.TestCase):

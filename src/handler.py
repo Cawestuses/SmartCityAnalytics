@@ -88,8 +88,11 @@ class Handler:
             else:
                 print(f"There was no {category} statistics in this date: {date}")
                 self._create_sample_df(category, date)
-                print("Created a sample csv")
-                return self._load_csv(category, date)
+                if self._check_for_file(date):
+                    print("Created a sample csv")
+                    return self._load_csv(category, date)
+                else:
+                    return DataFrame()
 
     def _save_csv(self, data: DataFrame, category:str, date: str|int|tuple[int,int]|tuple[int, int, int]|None = None):
         path = self._build_path(category, date)
@@ -97,6 +100,8 @@ class Handler:
         print(f"{category} has saved")
 
     def add_day(self, data: DataFrame, date: str|tuple[int, int, int]):
+        if data.empty:
+            raise EmptyDataError
         if isinstance(date, str):
             day, month, year = str_to_date(date)
         else:
@@ -108,6 +113,8 @@ class Handler:
         self._save_csv(month_df, "month", date)
 
     def add_month(self, data: DataFrame, date: str|tuple[int, int]):
+        if data.empty:
+            raise EmptyDataError
         if isinstance(date, str):
             month, year = str_to_date(date)
         else:
@@ -119,6 +126,8 @@ class Handler:
         self._save_csv(year_df, "year", date)
 
     def add_anomaly(self, data: DataFrame, date: str | tuple[int, int, int]):
+        if data.empty:
+            raise EmptyDataError
         mp = data.iloc[0].to_dict()
         anomalies_df = self._load_csv(category="anomalies")
         if isinstance(date, tuple):
