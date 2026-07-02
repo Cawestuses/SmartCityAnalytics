@@ -1,6 +1,6 @@
 import unittest
 
-from src.converter import (
+from misc.converter import (
     valid_date,
     str_to_date,
     date_to_str
