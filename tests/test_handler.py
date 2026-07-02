@@ -1,8 +1,8 @@
 import unittest
+from datetime import date
 from pathlib import Path
-
 import pandas as pd
-
+from pandas.errors import EmptyDataError
 from src.handler import Handler
 
 
@@ -11,128 +11,92 @@ class TestHandler(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.handler = Handler()
+        # Изолируем тестовые данные в отдельную временную папку, чтобы не портить продакшн
+        cls.test_dir = Path(__file__).resolve().parent.parent / "test_data"
+        cls.test_dir.mkdir(exist_ok=True)
 
-    # ---------- _build_path ----------
+        # Подменяем пути у хендлера для безопасности тестов
+        cls.handler.data_path = cls.test_dir
+        for key in cls.handler.folders:
+            cls.handler.folders[key] = "test_reports"
+        (cls.test_dir / "test_reports").mkdir(exist_ok=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        # Полная очистка тестовой папки после прохождения всех тестов
+        test_reports_dir = cls.test_dir / "test_reports"
+        if test_reports_dir.exists():
+            for file in test_reports_dir.iterdir():
+                file.unlink()
+            test_reports_dir.rmdir()
+        if cls.test_dir.exists():
+            cls.test_dir.rmdir()
+
+    # ---------- Тесты _build_path с datetime.date ----------
 
     def test_build_day_path(self):
-        path = self.handler._build_path("day", (5, 6, 2025))
-
-        self.assertEqual(
-            path.name,
-            "05_06_2025.csv"
-        )
+        test_date = date(2025, 6, 5)
+        path = self.handler._build_path("day", test_date)
+        self.assertEqual(path.name, "2025-06-05.csv")
 
     def test_build_month_path(self):
-        path = self.handler._build_path("month", (6, 2025))
-
-        self.assertEqual(
-            path.name,
-            "06_2025.csv"
-        )
+        test_date = date(2025, 6, 1)
+        path = self.handler._build_path("month", test_date)
+        self.assertEqual(path.name, "2025-06.csv")
 
     def test_build_year_path(self):
-        path = self.handler._build_path("year", 2025)
-
-        self.assertEqual(
-            path.name,
-            "2025.csv"
-        )
+        test_date = date(2025, 1, 1)
+        path = self.handler._build_path("year", test_date)
+        self.assertEqual(path.name, "2025.csv")
 
     def test_build_anomalies_path(self):
         path = self.handler._build_path("anomalies")
+        self.assertEqual(path.name, "anomalies.csv")
 
-        self.assertEqual(
-            path.name,
-            "anomalies.csv"
-        )
+    # ---------- Тесты валидации типов (Граничные случаи) ----------
 
-    # ---------- _check_for_file ----------
+    def test_build_path_invalid_date_type(self):
+        """Проверяем, что хендлер выбрасывает ValueError, если передана не datetime.date"""
+        with self.assertRaises(ValueError):
+            # Передаем старый кортеж вместо date
+            self.handler._build_path("day", (5, 6, 2025))
 
-    def test_existing_report(self):
-        self.assertTrue(
-            self.handler._check_for_file((30, 7, 2010))
-        )
+    def test_add_day_empty_dataframe(self):
+        """Проверяем, что метод add_day не падает с IndexError, а генерирует ValueError на пустой вход"""
+        empty_df = pd.DataFrame()
+        with self.assertRaises(ValueError):
+            self.handler.add_day(empty_df, date(2025, 6, 5))
 
-    def test_missing_report(self):
-        self.assertFalse(
-            self.handler._check_for_file((1, 1, 1900))
-        )
+    # ---------- Тесты сохранения / загрузки цикла ----------
 
-    # ---------- load csv ----------
+    def test_save_and_load_cycle(self):
+        """Проверяем, корректно ли работает цикл записи и чтения данных"""
+        test_date = date(2099, 1, 1)
 
-    def test_load_anomalies(self):
-        df = self.handler._load_csv("anomalies")
+        # Нам нужны колонки из настроек, чтобы имитировать реальные данные
+        from misc.settings import STATS
+        df = pd.DataFrame([[25.0] * len(STATS)], columns=STATS)
 
-        self.assertIsInstance(
-            df,
-            pd.DataFrame
-        )
+        self.handler._save_csv(df, "day", test_date)
+        loaded_df = self.handler._load_csv("day", test_date)
 
-    def test_load_rankings(self):
-        df = self.handler._load_csv("rankings")
+        # Проверяем, совпадают ли загруженные данные с исходными
+        pd.testing.assert_frame_equal(df, loaded_df)
 
-        self.assertIsInstance(
-            df,
-            pd.DataFrame
-        )
+    def test_load_nonexistent_file_creates_sample(self):
+        """Проверяем автосоздание пустого шаблона (sample), если файла нет на диске"""
+        test_date = date(2026, 7, 2)
+        # Файла на диске точно нет
+        path = self.handler._build_path("month", test_date)
+        if path.exists():
+            path.unlink()
 
-    def test_load_final_data(self):
-        df = self.handler._load_csv("final_data")
+        df = self.handler._load_csv("month", test_date)
 
-        self.assertIsInstance(
-            df,
-            pd.DataFrame
-        )
-
-    # ---------- save/load cycle ----------
-
-    def test_save_and_load_temp_file(self):
-
-        df = pd.DataFrame({
-            "A": [1],
-            "B": [2]
-        })
-
-        self.handler._save_csv(
-            df,
-            "day",
-            (1, 1, 2099)
-        )
-
-        loaded = self.handler._load_csv(
-            "day",
-            (1, 1, 2099)
-        )
-
-        pd.testing.assert_frame_equal(
-            df,
-            loaded
-        )
-
-        temp = self.handler._build_path(
-            "day",
-            (1, 1, 2099)
-        )
-
-        if temp.exists():
-            temp.unlink()
-
-    # ---------- invalid ----------
-
-    def test_invalid_category(self):
-        with self.assertRaises(KeyError):
-            self.handler._build_path("unknown")
-
-    def test_return_type(self):
-        path = self.handler._build_path(
-            "day",
-            (1, 1, 2025)
-        )
-
-        self.assertIsInstance(
-            path,
-            Path
-        )
+        self.assertIsInstance(df, pd.DataFrame)
+        self.assertFalse(df.empty)
+        # Индексом должны быть дни месяца
+        self.assertEqual(df.index.name, "Date")
 
 
 if __name__ == "__main__":

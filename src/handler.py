@@ -77,7 +77,8 @@ class Handler:
     def _load_csv(self, category: str, current_date: date | None = None) -> DataFrame:
         try:
             path = self._build_path(category, current_date)
-            df = read_csv(path)
+            use_index = category not in ["anomalies", "rankings", "final_data"]
+            df = read_csv(path, index_col = 0 if use_index else  None)
             print(f"{category} has loaded")
             return df
         except (FileNotFoundError, EmptyDataError):
@@ -95,7 +96,8 @@ class Handler:
         self, data: DataFrame, category: str, current_date: date | None = None
     ):
         path = self._build_path(category, current_date)
-        data.to_csv(path, index=False)
+        use_index = category not in ["anomalies", "rankings", "final_data"]
+        data.to_csv(path, index=True)
         print(f"{category} has saved")
 
     def add_day(self, data: DataFrame, current_date: date):
@@ -121,6 +123,7 @@ class Handler:
 
         anomalies_df = self._load_csv(category="anomalies")
         new_row = DataFrame({"date": [current_date.strftime("%Y-%m-%d")]})
+        new_row = concat([new_row, data], axis=1)
         anomalies_df = concat([anomalies_df, new_row], ignore_index=True)
 
         self._save_csv(anomalies_df, category="anomalies")
