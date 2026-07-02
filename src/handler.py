@@ -1,12 +1,14 @@
+import calendar
+from datetime import date
 from pathlib import Path
-
 import numpy as np
-from pandas import DataFrame, read_csv, concat
+from pandas import DataFrame, concat, read_csv
 from pandas.errors import EmptyDataError
-from misc.converter import date_to_str, str_to_date
 from misc.settings import STATS
 
+
 class Handler:
+
     def __init__(self):
         try:
             self.base_dir = Path(__file__).resolve().parent.parent
@@ -16,122 +18,109 @@ class Handler:
         self.data_path = self.base_dir / "data"
         self.folders = {
             "report": "reports",
-            "day":"reports",
-            "month":"monthly",
-            "year":"yearly",
+            "day": "reports",
+            "month": "monthly",
+            "year": "yearly",
             "rankings": "exports",
             "anomalies": "exports",
-            "final_data": "exports"
+            "final_data": "exports",
         }
 
-    def _check_for_file(self, date: str|int|tuple[int, int]|tuple[int, int, int]) -> bool:
-        if isinstance(date, tuple):
-            if len(date) == 3:
-                date = date_to_str(*date)
-            elif len(date) == 2:
-                date = date_to_str(None, *date)
-        elif isinstance(date, int):
-            date = date_to_str(None, None, date)
-        file_path = f"{date}.csv"
-
-        if len(date) == 4:
-            file_path = self.data_path / self.folders["year"] / file_path
-        elif len(date) == 7:
-            file_path = self.data_path / self.folders["month"] / file_path
-        else:
-            file_path = self.data_path / self.folders["day"] / file_path
-
-        if file_path.is_file():
-            return True
-        else:
+    def _check_for_file(self, current_date: date, category: str) -> bool:
+        try:
+            file_path = self._build_path(category, current_date)
+            return file_path.is_file()
+        except FileNotFoundError:
             return False
 
-    def _create_sample_df(self, category: str, date:str|int|tuple[int, int]|None):
-        dates = np.arange(1, 13)
-        zeros = np.zeros((12, len(STATS)))
-
-        if category == "month":
-            dates = np.arange(1, 31)
-            zeros = np.zeros((30, len(STATS)))
-
+    def _create_sample_df(self, category: str, current_date: date):
+        if category == "year":
+            dates = np.arange(1, 13)
+            zeros = np.zeros((12, len(STATS)))
+        elif category == "month":
+            _, days_in_month = calendar.monthrange(
+                current_date.year, current_date.month
+            )
+            dates = np.arange(1, days_in_month + 1)
+            zeros = np.zeros((days_in_month, len(STATS)))
+        else:
+            dates = [current_date.day]
+            zeros = np.zeros((1, len(STATS)))
         df = DataFrame(zeros, index=dates, columns=STATS)
         df.index.name = "Date"
-        self._save_csv(df, category, date)
+        self._save_csv(df, category, current_date)
 
-    def _build_path(self, category:str, date: str|int|tuple[int,int]|tuple[int, int, int]|None = None) -> str:
-        if isinstance(date, tuple):
-            if len(date) == 3:
-                date = date_to_str(*date)
+    def _build_path(self, category: str, current_date: date | None = None) -> Path:
+        if category in ["rankings", "anomalies", "final_data"]:
+            full_path = (
+                self.data_path / self.folders[category] / f"{category}.csv"
+            )
+        else:
+            if not isinstance(current_date, date):
+                raise ValueError(
+                    f"Для категории '{category}' необходим объект datetime.date"
+                )
+            if category == "year":
+                file_name = current_date.strftime("%Y.csv")
+            elif category == "month":
+                file_name = current_date.strftime(
+                    "%Y-%m.csv"
+                )
             else:
-                date = date_to_str(None, *date)
-        elif isinstance(date, int):
-            date = date_to_str(None, None, date)
+                file_name = current_date.strftime(
+                    "%Y-%m-%d.csv"
+                )
+            full_path = self.data_path / self.folders[category] / file_name
 
-        if category not in ["rankings", "anomalies", "final_data"]:
-            full_path = self.data_path / self.folders[category] / f"{date}.csv"
-        else:
-            full_path = self.data_path / self.folders[category] / f"{category}.csv"
+        return full_path
 
-        if full_path.is_file():
-            return full_path
-        else:
-            raise FileNotFoundError
-
-    def _load_csv(self, category:str, date: str|int|tuple[int,int]|tuple[int, int, int]|None = None) -> DataFrame:
-        path = self._build_path(category, date)
+    def _load_csv(self, category: str, current_date: date | None = None) -> DataFrame:
         try:
+            path = self._build_path(category, current_date)
             df = read_csv(path)
             print(f"{category} has loaded")
             return df
-        except EmptyDataError:
-            if category in ["anomalies", "rankings"]:
+        except (FileNotFoundError, EmptyDataError):
+            if category in ["anomalies", "rankings", "final_data"]:
                 print(f"There was no {category} statistics")
                 return DataFrame()
             else:
-                print(f"There was no {category} statistics in this date: {date}")
-                self._create_sample_df(category, date)
-                if self._check_for_file(date):
-                    print("Created a sample csv")
-                    return self._load_csv(category, date)
-                else:
-                    return DataFrame()
+                print(
+                    f"There was no {category} statistics for this date: {current_date}"
+                )
+                self._create_sample_df(category, current_date)
+                return self._load_csv(category, current_date)
 
-    def _save_csv(self, data: DataFrame, category:str, date: str|int|tuple[int,int]|tuple[int, int, int]|None = None):
-        path = self._build_path(category, date)
+    def _save_csv(
+        self, data: DataFrame, category: str, current_date: date | None = None
+    ):
+        path = self._build_path(category, current_date)
         data.to_csv(path, index=False)
         print(f"{category} has saved")
 
-    def add_day(self, data: DataFrame, date: str|tuple[int, int, int]):
+    def add_day(self, data: DataFrame, current_date: date):
         if data.empty:
-            raise ValueError
-        if isinstance(date, str):
-            day, month, year = str_to_date(date)
-        else:
-            day, month, year = date
+            raise ValueError("DataFrame is empty")
+        mp = data.iloc[0].to_dict()
+        month_df = self._load_csv("month", current_date)
+        month_df.loc[current_date.day] = mp
+        self._save_csv(month_df, "month", current_date)
 
-        mp = data.iloc[0].dict()
-        month_df = self._load_csv("month", date)
-        month_df[date] = mp
-        self._save_csv(month_df, "month", date)
-
-    def add_month(self, data: DataFrame, date: str|tuple[int, int]):
+    def add_month(self, data: DataFrame, current_date: date):
         if data.empty:
-            raise ValueError
-        if isinstance(date, str):
-            month, year = str_to_date(date)
-        else:
-            month, year = date
+            raise ValueError("DataFrame is empty")
 
         mp = data.iloc[0].to_dict()
-        year_df = self._load_csv("year", year)
-        year_df.loc[month] = mp
-        self._save_csv(year_df, "year", date)
+        year_df = self._load_csv("year", current_date)
+        year_df.loc[current_date.month] = mp
+        self._save_csv(year_df, "year", current_date)
 
-    def add_anomaly(self, data: DataFrame, date: str | tuple[int, int, int]):
+    def add_anomaly(self, data: DataFrame, current_date: date):
         if data.empty:
-            raise ValueError
+            raise ValueError("DataFrame is empty")
+
         anomalies_df = self._load_csv(category="anomalies")
-        if isinstance(date, tuple):
-            date = date_to_str(*date)
-        anomalies_df = concat([anomalies_df, date], ignore_index=True)
+        new_row = DataFrame({"date": [current_date.strftime("%Y-%m-%d")]})
+        anomalies_df = concat([anomalies_df, new_row], ignore_index=True)
+
         self._save_csv(anomalies_df, category="anomalies")
