@@ -1,6 +1,11 @@
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
 from pandas import DataFrame, read_csv
-from converter import date_to_str, str_to_date
+from pandas.errors import EmptyDataError
+from misc.converter import date_to_str, str_to_date
+from misc.settings import *
 
 class Handler:
     def __init__(self):
@@ -42,6 +47,18 @@ class Handler:
         else:
             return False
 
+    def _create_sample_df(self, category: str, date:str|int|tuple[int, int]|None):
+        dates = np.arange(1, 13)
+        zeros = np.zeros((12, len(STATS)))
+
+        if category == "month":
+            dates = np.arange(1, 31)
+            zeros = np.zeros((30, len(STATS)))
+
+        df = DataFrame(zeros, index=dates, columns=STATS)
+        df.index.name = "Date"
+        self._save_csv(df, category, date)
+
     def _build_path(self, category:str, date: str|int|tuple[int,int]|tuple[int, int, int]|None = None) -> str:
         if isinstance(date, tuple):
             if len(date) == 3:
@@ -60,9 +77,19 @@ class Handler:
 
     def _load_csv(self, category:str, date: str|int|tuple[int,int]|tuple[int, int, int]|None = None) -> DataFrame:
         path = self._build_path(category, date)
-        df = read_csv(path)
-        print(f"{category} has loaded")
-        return df
+        try:
+            df = read_csv(path)
+            print(f"{category} has loaded")
+            return df
+        except EmptyDataError:
+            if category in ["anomalies", "rankings"]:
+                print(f"There was no {category} statistics")
+                return DataFrame()
+            else:
+                print(f"There was no {category} statistics in this date: {date}")
+                self._create_sample_df(category, date)
+                print("Created a sample csv")
+                return self._load_csv(category, date)
 
     def _save_csv(self, data: DataFrame, category:str, date: str|int|tuple[int,int]|tuple[int, int, int]|None = None):
         path = self._build_path(category, date)
