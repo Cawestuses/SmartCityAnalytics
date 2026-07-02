@@ -1,8 +1,7 @@
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
-from pandas import DataFrame, read_csv
+from pandas import DataFrame, read_csv, concat
 from pandas.errors import EmptyDataError
 from misc.converter import date_to_str, str_to_date
 from misc.settings import *
@@ -107,9 +106,8 @@ class Handler:
         else:
             day, month, year = date
 
-        mp = data.iloc[0].to_dict()
         month_df = self._load_csv("month", date)
-        month_df.loc[day] = mp
+        month_df = concat([month_df, data], ignore_index=True)
         self._save_csv(month_df, "month", date)
 
     def add_month(self, data: DataFrame, date: str|tuple[int, int]):
